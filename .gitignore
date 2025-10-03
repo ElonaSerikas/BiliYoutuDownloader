@@ -1,0 +1,60 @@
+# dependencies & env
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# build artifacts
+dist/
+build/
+out/
+.next/
+.vite/
+
+# cache
+*.log
+.cache/
+.pytest_cache/
+
+dist/
+dist-electron/
+release/
+node_modules/
+.vite/
+out/
+build/
+*.log
+*.zip
+*.exe
+*.AppImage
+*.dmg
+
+# deps & env
+node_modules/
+.venv/
+__pycache__/
+
+# builds
+dist/
+dist-electron/
+release/
+out/
+build/
+.vite/
+.next/
+.cache/
+.parcel-cache/
+
+# binaries & logs
+*.log
+*.zip
+*.7z
+*.mp4
+*.ass
+*.exe
+*.AppImage
+*.dmg
+*.msi
+
+
+*.bundle

@@ -1,0 +1,52 @@
+﻿{
+  "name": "biliyoutudownloader-electron",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Bilibili & YouTube 妗岄潰涓嬭浇鍣紙Electron + React + TS + Fluent锛?,
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --mode development",
+    "dev:app": "concurrently -k \"vite --mode development\" \"wait-on tcp:5173 && electron .\"",
+    "build": "tsc -b && vite build && electron-builder",
+    "lint": "echo \"(skip)\"",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "build": {
+    "appId": "com.example.biliyoutu",
+    "directories": { "output": "release" },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "src/main/**",
+      "resources/**",
+      "package.json"
+    ],
+    "mac": { "category": "public.app-category.video" },
+    "win": { "target": "nsis", "requestedExecutionLevel": "asInvoker" },
+    "linux": { "target": ["AppImage"], "category": "AudioVideo" }
+  },
+  "dependencies": {
+    "@fluentui/react-components": "^9.49.3",
+    "adm-zip": "^0.5.12",
+    "concurrently": "^9.0.1",
+    "electron-store": "^9.0.0",
+    "got": "^14.4.1",
+    "nanoid": "^5.0.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2",
+    "tough-cookie": "^4.1.4",
+    "ytdl-core": "^4.11.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^31.3.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.8",
+    "wait-on": "^8.0.2"
+  }
+}
+
