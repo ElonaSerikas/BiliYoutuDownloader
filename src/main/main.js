@@ -1,54 +1,56 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog, Menu, Tray, nativeImage, Notification } from 'electron';
 import path from 'node:path';
-import Store from 'electron-store';
-import isDevPkg from 'electron-is-dev';
-const isDev = isDevPkg;
+import { fileURLToPath } from 'node:url';
+import isDev from 'electron-is-dev';
 
-// 导入所有服务
-import { DownloadManager } from './manager.js';
-import { loginBilibiliByWeb, loginYouTubeByGoogle } from './login.js';
-import { log, logger } from './service/logger.ts'; // 假设 logger.ts
-import { runDiagnostics, exportDiagnosticsZip, importDiagnosticsZip } from './service/diagnostics.ts'; // 假设 diagnostics.ts
-import * as biliExtractor from './service/extractors/bilibili.ts'; // 假设 bilibili.ts
-import * as youtubeExtractor from './service/extractors/youtube.ts'; // 假设 youtube.ts
-import * as biliBatch from './service/extractors/bili-batch.ts'; // 批量导入
-import * as biliSpace from './service/space/bili-space.ts';   // UP主空间
-import { exportBiliComments } from './service/comments/bili-comments.ts';
-import { exportYTComments } from './service/comments/youtube-comments.ts';
-import { exportBiliDanmaku } from './service/danmaku/bili-danmaku.ts';
+import { getStore } from './services/store';
+import { DownloadManager } from './services/downloader/DownloadManager';
+import { loginBilibiliByWeb, loginYouTubeByGoogle, importCookies } from './services/auth';
+import { biliExtractor, youtubeExtractor } from './services/extractors';
+import { planBatchByFavorite, planBatchBySeries } from './services/extractors/bili-batch';
+import { downloadUserCard } from './services/space/bili-space';
+import { exportBiliComments, exportYTComments } from './services/comments';
+import { exportBiliDanmaku } from './services/danmaku';
+import { runDiagnostics, exportDiagnosticsZip, importDiagnosticsZip } from './services/diagnostics';
+import { log } from './services/logger';
 
+// --- 全局变量和路径设置 ---
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+process.env.DIST_ELECTRON = path.join(__dirname, '../');
+process.env.DIST = path.join(process.env.DIST_ELECTRON, '../dist');
+process.env.PUBLIC = process.env.VITE_DEV_SERVER_URL ? path.join(process.env.DIST_ELECTRON, '../public') : process.env.DIST;
 
-const store = new Store({ name: 'prefs' });
+let mainWindow: BrowserWindow | null;
+let tray: Tray | null;
+const store = getStore();
 
-// ---- 初始设置（含 FFmpeg 可配置）----
-if (!store.get('settings')) {
-  store.set('settings', {
-    downloadDir: app.getPath('downloads'),
-    concurrency: 4,                 
-    chunkSizeMB: 8,
-    codecPref: 'avc1',
-    ffmpegPath: '',                 
-    filenameTpl: '{title}-{id}',    // 新增：命名模板
-    danmaku: { width:3840, height:2160, fps:120, fontName:'Microsoft YaHei', fontSize:42, outline:3, shadow:0, opacity:0, scrollDuration:8, staticDuration:4.5, trackHeight:48 }
-  });
-}
-
-let mainWindow;
-
+// --- 主窗口创建 ---
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    titleBarStyle: 'hiddenInset',
-    backgroundColor: '#111111',
-    backgroundMaterial: 'mica', // Windows 11 Mica 效果
+    minWidth: 940,
+    minHeight: 600,
+    titleBarStyle: 'hidden',
+    frame: false,
+    icon: path.join(process.env.PUBLIC, 'icon.png'),
+    backgroundColor: '#00000000',
+    vibrancy: 'under-window', // macOS 毛玻璃效果
+    visualEffectState: "active",
+    backgroundMaterial: 'acrylic', // Windows 11 亚克力效果
     webPreferences: {
-      // 预加载脚本路径需要根据实际构建路径调整
-      preload: path.join(app.getAppPath(), 'dist-electron/preload.js'), 
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true, 
-      webSecurity: true
+      sandbox: false,
+    },
+  });
+
+  // 监听拖拽链接事件
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('http')) {
+      event.preventDefault();
+      mainWindow?.webContents.send('app:dnd-url', url);
     }
   });
 
@@ -56,131 +58,141 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(app.getAppPath(), 'dist/index.html'));
+    mainWindow.loadFile(path.join(process.env.DIST, 'index.html'));
   }
+
+  // 根据设置决定关闭行为
+  mainWindow.on('close', (event) => {
+    if (store.get('settings.minimizeToTray', true) && !app.isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
+// --- 系统托盘 ---
+function createTray() {
+  const iconPath = path.join(process.env.PUBLIC, 'icon.png');
+  const icon = nativeImage.createFromPath(iconPath);
+  tray = new Tray(icon);
+  const contextMenu = Menu.buildFromTemplate([
+    { label: '打开', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+    { type: 'separator' },
+    { label: '退出', click: () => { app.isQuitting = true; app.quit(); } }
+  ]);
+  tray.setToolTip('BiliYoutu 下载器');
+  tray.setContextMenu(contextMenu);
+  tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus(); });
+}
+
+// --- 应用生命周期 ---
 app.whenReady().then(() => {
-  const ff = store.get('settings')?.ffmpegPath || process.env.FFMPEG_PATH || 'ffmpeg';
-  globalThis.__FFMPEG_BIN__ = ff; 
   createWindow();
-});
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('activate', () => { if (!mainWindow) createWindow(); });
-
-const mgr = new DownloadManager({
-  log: (lvl, tag, data)=> log?.[lvl||'info']?.(String(tag||'mgr'), 'download', data),
-  ffmpegBin: () => globalThis.__FFMPEG_BIN__ || 'ffmpeg',
-  store
-});
-
-
-// ---------- 统一错误包装和 IPC 路由 ----------
-
-// 统一错误结构体
-function err(code, name, message, details) {
-  const e = new Error(message); e.code = code; e.name = name; e.details = details; return e;
-}
-// IPC 包装器：捕获同步/异步错误并返回标准结构
-async function wrap(fn) {
-  try { const data = await fn(); return { ok: true, data }; }
-  catch (e) {
-    log.error('ipc error', 'ipc', { name: e.name, code: e.code, message: e.message, details: e.details });
-    return { ok: false, error: { code: e.code || 500, name: e.name || 'IPC_ERROR', message: e.message || '未知错误', details: e.details || e.message } };
+  if (store.get('settings.minimizeToTray', true)) {
+    createTray();
   }
-}
+});
 
-// 解析器平台检测
-function detectPlatform(url) {
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});
+
+// --- 下载管理器与事件监听 ---
+const manager = new DownloadManager({ store });
+
+manager.on('task-complete', (task) => {
+  if (store.get('settings.notifyOnComplete', true) && mainWindow) {
+    new Notification({
+      title: '下载完成',
+      body: task.title,
+      icon: path.join(process.env.PUBLIC, 'icon.png'),
+    }).show();
+  }
+});
+
+manager.on('update', (tasks) => {
+  mainWindow?.webContents.send('app:task-update', tasks);
+});
+
+// --- IPC 统一错误处理与路由 ---
+const wrap = async <T>(fn: () => Promise<T> | T): Promise<{ ok: true, data: T } | { ok: false, error: { name: string, message: string } }> => {
   try {
-    const u = new URL(url);
-    if (/bilibili\.com|b23\.tv/.test(u.host)) return 'bili';
-    if (/youtube\.com|youtu\.be/.test(u.host)) return 'yt';
-  } catch {}
-  return 'unknown';
-}
+    const data = await fn();
+    return { ok: true, data };
+  } catch (e: any) {
+    log.error('IPC Error', 'ipc', { name: e.name, message: e.message, stack: e.stack });
+    return { ok: false, error: { name: e.name || 'Error', message: e.message || '发生未知错误' } };
+  }
+};
 
-// ---------- 命名空间化 IPC：app:* ----------
+// --- IPC 路由实现 ---
+// 窗口控制
+ipcMain.handle('app:win:minimize', () => wrap(() => mainWindow?.minimize()));
+ipcMain.handle('app:win:maximize', () => wrap(() => mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize()));
+ipcMain.handle('app:win:close', () => wrap(() => mainWindow?.close()));
 
-// 下载任务
-ipcMain.handle('app:task:create', async (_e, payload) => wrap(async () => mgr.create(payload)));
-ipcMain.handle('app:task:list',   async () => wrap(async () => mgr.list()));
-ipcMain.handle('app:task:control',async (_e, { id, action }) => wrap(async () => mgr.control(id, action)));
+// 媒体解析
+ipcMain.handle('app:media:parse', (_e, url: string) => wrap(async () => {
+  const u = new URL(url);
+  if (/bilibili\.com|b23\.tv/.test(u.host)) return biliExtractor.parse(url);
+  if (/youtube\.com|youtu\.be/.test(u.host)) return youtubeExtractor.parse(url);
+  throw new Error('不支持的链接格式');
+}));
+
+// 任务管理
+ipcMain.handle('app:task:create', (_e, payload) => wrap(() => manager.create(payload)));
+ipcMain.handle('app:task:list', () => wrap(() => manager.list()));
+ipcMain.handle('app:task:control', (_e, { id, action }) => wrap(() => manager.control(id, action)));
 
 // 设置
-ipcMain.handle('app:settings:get', async () => wrap(async () => store.get('settings')));
-ipcMain.handle('app:settings:set', async (_e, patch) => wrap(async () => {
-  const s = store.get('settings') || {};
-  store.set('settings', { ...s, ...patch });
-  if (patch?.ffmpegPath) globalThis.__FFMPEG_BIN__ = patch.ffmpegPath;
+ipcMain.handle('app:settings:get', () => wrap(() => store.get('settings')));
+ipcMain.handle('app:settings:set', (_e, patch) => wrap(() => {
+  store.set('settings', { ...store.get('settings'), ...patch });
+  // 动态创建/销毁托盘
+  if (patch.minimizeToTray === true && !tray) createTray();
+  if (patch.minimizeToTray === false && tray) { tray.destroy(); tray = null; }
   return store.get('settings');
 }));
 
-// 登录
-ipcMain.handle('app:auth:bili', async () => wrap(async () => loginBilibiliByWeb(store)));
-ipcMain.handle('app:auth:yt',   async () => wrap(async () => loginYouTubeByGoogle(store)));
-ipcMain.handle('app:auth:cookie:import', async (_e, { kind, cookie }) => wrap(async () => {
-  if (kind === 'bili') store.set('bili.cookie', cookie);
-  if (kind === 'yt') store.set('yt.cookie', cookie);
-  return true;
+// 用户认证
+ipcMain.handle('app:auth:bili:web', () => wrap(loginBilibiliByWeb));
+ipcMain.handle('app:auth:yt:web', () => wrap(loginYouTubeByGoogle));
+ipcMain.handle('app:auth:cookie:import', (_e, { kind, cookie }) => wrap(() => importCookies(kind, cookie)));
+
+// 批量与附加资源
+ipcMain.handle('app:batch:bili:fav', (_e, mediaId: string) => wrap(() => planBatchByFavorite(mediaId, store.get('settings.downloadDir'))));
+ipcMain.handle('app:batch:bili:series', (_e, mid: string) => wrap(() => planBatchBySeries(mid, store.get('settings.downloadDir'))));
+ipcMain.handle('app:resource:user', (_e, mid: string) => wrap(() => downloadUserCard(mid, store.get('settings.downloadDir'))));
+ipcMain.handle('app:resource:comments', (_e, meta: any) => wrap(() => meta.platform === 'bili' ? exportBiliComments(meta) : exportYTComments(meta)));
+ipcMain.handle('app:resource:danmaku', (_e, { meta, fmt }) => wrap(() => exportBiliDanmaku(meta, fmt, store.get('settings.danmaku'))));
+
+// 诊断与日志
+ipcMain.handle('app:diag:run', () => wrap(runDiagnostics));
+ipcMain.handle('app:log:export', () => wrap(() => exportDiagnosticsZip()));
+ipcMain.handle('app:log:import', async () => wrap(async () => {
+  const res = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }] });
+  return res.canceled || !res.filePaths[0] ? null : importDiagnosticsZip(res.filePaths[0]);
 }));
 
-// 解析
-ipcMain.handle('app:media:parse', async (_e, url) => wrap(async () => {
-  const platform = detectPlatform(url);
-  log.info('parse request', 'parse', { url, platform });
-  if (platform === 'bili') return biliExtractor.parse(url, store);
-  if (platform === 'yt') return youtubeExtractor.parse(url);
-  throw err(400, 'UNSUPPORTED_LINK', '暂不支持的链接');
+// Shell 操作与对话框
+ipcMain.handle('app:shell:openExternal', (_e, url: string) => wrap(() => shell.openExternal(url)));
+ipcMain.handle('app:shell:openPath', (_e, p: string) => wrap(() => shell.openPath(p)));
+ipcMain.handle('app:shell:showItem', (_e, p: string) => wrap(() => shell.showItemInFolder(p)));
+ipcMain.handle('app:dialog:openDirectory', async () => wrap(async () => {
+  const res = await dialog.showOpenDialog({ properties: ['openDirectory'], title: "选择下载目录" });
+  return res.canceled ? null : res.filePaths[0];
 }));
-
-// 扩展资源/批量 (新增)
-ipcMain.handle('app:resource:bili:userCard', async (_e, { mid, targetDir }) => wrap(async () => {
-  return biliSpace.downloadUserCard(mid, targetDir);
+ipcMain.handle('app:dialog:openFile', async () => wrap(async () => {
+  const res = await dialog.showOpenDialog({ properties: ['openFile'], title: "选择背景图片", filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp'] }] });
+  return res.canceled ? null : res.filePaths[0];
 }));
-ipcMain.handle('app:resource:bili:batchFav', async (_e, { mediaId, rootDir }) => wrap(async () => {
-  return biliBatch.planBatchByFavorite(mediaId, rootDir);
-}));
-ipcMain.handle('app:resource:bili:batchSeries', async (_e, { mid, rootDir }) => wrap(async () => {
-  return biliBatch.planBatchBySeries(mid, rootDir);
-}));
-
-// 评论/弹幕导出 (新增：用于 SearchPage 附加资源按钮)
-ipcMain.handle('app:resource:comments:export', async (_e, { meta }) => wrap(async () => {
-  if (meta.platform === 'bili') return exportBiliComments(meta);
-  if (meta.platform === 'yt') return exportYTComments(meta);
-  throw err(400, 'UNSUPPORTED', '不支持的平台评论导出');
-}));
-ipcMain.handle('app:resource:danmaku:export', async (_e, { meta, fmt }) => wrap(async () => {
-  const settings = store.get('settings');
-  if (meta.platform === 'bili') return exportBiliDanmaku(meta, fmt, settings?.danmaku);
-  throw err(400, 'UNSUPPORTED', 'YouTube 暂不支持弹幕导出');
-}));
-
-
-// 日志/诊断
-ipcMain.handle('app:log:recent', async (_e, lines) => wrap(async () => logger.readRecent(lines || 2000)));
-ipcMain.handle('app:log:list',   async () => wrap(async () => logger.listFiles()));
-ipcMain.handle('app:log:export', async (_e) => wrap(async () => {
-  const { canceled, filePath } = await dialog.showSaveDialog({ title: '导出诊断包', defaultPath: 'diagnostics.zip', filters: [{ name: 'ZIP', extensions: ['zip'] }] });
-  if (canceled || !filePath) return null;
-  return exportDiagnosticsZip(filePath);
-}));
-ipcMain.handle('app:log:import', async (_e) => wrap(async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog({ title: '导入诊断包', filters: [{ name: 'ZIP', extensions: ['zip'] }] });
-  if (canceled || !filePaths?.[0]) return null;
-  return importDiagnosticsZip(filePaths[0]);
-}));
-ipcMain.handle('app:diag:run',   async () => wrap(async () => runDiagnostics()));
-
-// 窗口控制
-ipcMain.handle('app:win:min',  () => { mainWindow?.minimize(); return { ok:true }; });
-ipcMain.handle('app:win:max',  () => { mainWindow?.isMaximized()? mainWindow?.unmaximize(): mainWindow?.maximize(); return { ok:true }; });
-ipcMain.handle('app:win:close',() => { mainWindow?.close(); return { ok:true }; });
-
-// 打开 FFmpeg 官网（缺失时友好引导）
-ipcMain.handle('app:help:ffmpeg', async () => { await shell.openExternal('https://ffmpeg.org/download.html'); return { ok:true }; });
-// 打开文件/目录 (新增)
-ipcMain.handle('app:shell:openFile', async (_e, filePath) => { await shell.openPath(filePath); return { ok: true }; });
-ipcMain.handle('app:shell:openDir', async (_e, dirPath) => { await shell.openPath(dirPath); return { ok: true }; });

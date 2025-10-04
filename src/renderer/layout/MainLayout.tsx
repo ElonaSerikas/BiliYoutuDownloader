@@ -1,89 +1,88 @@
-import React from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
-import CustomTitleBar from '../components/CustomTitleBar';
-import { SettingsRegular, SearchRegular, CloudDownloadRegular, PeopleRegular, InfoRegular } from '@fluentui/react-icons'; 
+import React, { useState, useEffect } from 'react';
+import { Outlet, useLocation, Link } from 'react-router-dom';
+import { useSettings } from '../../contexts/SettingsContext';
+import CustomTitleBar from '../CustomTitleBar';
+import {
+  SearchRegular, CloudDownloadRegular, SettingsRegular, PersonRegular,
+  InfoRegular, ChevronLeftRegular, ChevronRightRegular, BookRegular
+} from '@fluentui/react-icons';
 
-// 侧边栏样式：可折叠/展开的过渡效果
+// --- 样式定义 ---
 const navStyle = (isCollapsed: boolean): React.CSSProperties => ({
-  width: isCollapsed ? 60 : 220, 
-  minWidth: 60,
-  borderRight:'1px solid var(--colorNeutralStroke1)',
-  padding: isCollapsed ? 0 : 12, 
-  display:'flex', 
-  flexDirection:'column', 
-  gap: 4, 
-  transition: 'width 0.3s ease-in-out',
-  flexShrink: 0
+  width: isCollapsed ? 52 : 200,
+  padding: '8px',
+  display: 'flex', flexDirection: 'column', gap: 4,
+  transition: 'width 0.2s ease-in-out',
+  flexShrink: 0,
+  backgroundColor: 'rgba(40, 40, 40, 0.5)',
+  backdropFilter: 'blur(30px) saturate(180%)',
+  borderRight: '1px solid var(--colorNeutralStroke2)',
 });
 
-// 导航项样式 (Fluent-like NavItem)
-const linkStyle = (active:boolean, isCollapsed: boolean): React.CSSProperties => ({
-  padding: '10px 12px', 
-  borderRadius: 8, 
-  textDecoration:'none',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: isCollapsed ? 'center' : 'flex-start',
-  gap: 8,
-  background: active ? 'var(--colorNeutralBackground3)' : 'transparent',
+const linkStyle = (active: boolean): React.CSSProperties => ({
+  padding: '10px', borderRadius: 6, textDecoration: 'none',
+  display: 'flex', alignItems: 'center', gap: 16,
+  background: active ? 'var(--colorSubtleBackgroundSelected)' : 'transparent',
   color: active ? 'var(--colorNeutralForeground1)' : 'var(--colorNeutralForeground2)',
-  fontWeight: active ? 'bold' : 'normal',
-  transition: 'all 0.15s ease-out',
+  fontWeight: active ? 600 : 400,
+  transition: 'all 0.15s ease-out', cursor: 'pointer',
+  whiteSpace: 'nowrap', overflow: 'hidden',
 });
 
-// 图标映射
+// --- 导航项 ---
 const NavItems = [
-  { to: "/", label: "搜索/解析", Icon: SearchRegular },
+  { to: "/", label: "搜索解析", Icon: SearchRegular },
   { to: "/downloads", label: "下载管理", Icon: CloudDownloadRegular },
-  { to: "/settings", label: "设置", Icon: SettingsRegular },
-  { to: "/user", label: "用户中心", Icon: PeopleRegular },
-  { to: "/diagnostics", label: "诊断与日志", Icon: InfoRegular }, 
+  { to: "/user", label: "用户中心", Icon: PersonRegular },
+  { to: "/settings", label: "应用设置", Icon: SettingsRegular },
+  { to: "/diagnostics", label: "诊断日志", Icon: InfoRegular },
+  { to: "/about", label: "关于", Icon: BookRegular },
 ];
 
-export default function MainLayout(){
+// --- 布局组件 ---
+export default function MainLayout() {
   const { pathname } = useLocation();
-  const [isCollapsed, setIsCollapsed] = React.useState(false); 
+  const { settings } = useSettings();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [dndUrl, setDndUrl] = useState('');
+
+  useEffect(() => {
+    const removeListener = window.api.on('app:dnd-url', (url: string) => setDndUrl(url));
+    return () => { removeListener?.(); };
+  }, []);
+
+  const bgStyle: React.CSSProperties = settings?.backgroundImagePath
+    ? { backgroundImage: `url("file://${settings.backgroundImagePath.replace(/\\/g, '/')}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    : {};
+
+  const overlayStyle: React.CSSProperties = {
+    backgroundColor: `rgba(0, 0, 0, ${1 - (settings?.backgroundOpacity ?? 0.7)})`,
+    position: 'absolute', inset: 0, zIndex: -1,
+  };
 
   return (
-    <div style={{height:'100vh', width:'100vw', display:'flex', flexDirection:'column'}}>
-      <CustomTitleBar/>
-      <div style={{display:'flex', height:'calc(100% - 40px)'}}>
-        
-        {/* 侧边栏 */}
-        <nav style={navStyle(isCollapsed)}>
-          {NavItems.map(item => (
-            <Link key={item.to} to={item.to} style={linkStyle(pathname===item.to, isCollapsed)}>
-              <item.Icon />
-              <span style={{ display: isCollapsed ? 'none' : 'block', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                {item.label}
-              </span>
-            </Link>
-          ))}
-          
-          {/* 折叠按钮 */}
-          <button 
-            onClick={() => setIsCollapsed(!isCollapsed)} 
-            style={{ 
-              marginTop: 'auto', 
-              width: isCollapsed ? '100%' : '100%',
-              padding: 10,
-              cursor: 'pointer',
-              border: '1px solid var(--colorNeutralStroke1)',
-              borderRadius: 8,
-              background: 'var(--colorNeutralBackground1)',
-              textAlign: isCollapsed ? 'center' : 'left',
-              transition: 'background 0.15s ease-out',
-            }}
-            title={isCollapsed ? '展开' : '折叠'}
-          >
-            {isCollapsed ? '→' : '←' + ' 导航'}
-          </button>
-        </nav>
-        
-        {/* 主内容区 */}
-        <main style={{flex:1, overflow:'auto', padding:16}}>
-          <Outlet/>
-        </main>
+    <div className="main-layout" style={bgStyle}>
+      <div style={overlayStyle} />
+      <div className="content-wrapper">
+        <CustomTitleBar />
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          <nav style={navStyle(isCollapsed)}>
+            {NavItems.map(item => (
+              <Link key={item.to} to={item.to} style={linkStyle(pathname === item.to)}>
+                <item.Icon fontSize={20} />
+                {!isCollapsed && <span>{item.label}</span>}
+              </Link>
+            ))}
+            <div style={{ flex: 1 }} />
+            <div onClick={() => setIsCollapsed(!isCollapsed)} style={linkStyle(false)} title={isCollapsed ? '展开导航' : '折叠导航'}>
+              {isCollapsed ? <ChevronRightRegular fontSize={20} /> : <ChevronLeftRegular fontSize={20} />}
+              {!isCollapsed && <span>折叠</span>}
+            </div>
+          </nav>
+          <main style={{ flex: 1, overflow: 'auto', padding: 24 }}>
+            <Outlet context={{ dndUrl }} />
+          </main>
+        </div>
       </div>
     </div>
   );

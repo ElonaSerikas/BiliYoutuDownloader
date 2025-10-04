@@ -1,49 +1,43 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
-const call = (ch, ...args) => ipcRenderer.invoke(ch, ...args).then((r) => {
-  if (r?.ok) return r.data;
-  const e = r?.error || { code: 500, name: 'IPC_ERROR', message: 'unknown' };
-  const err = new Error(e.message); err.name = e.name; err.code = e.code; err.details = e.details; throw err;
-});
+// IPC 通道白名单，保障安全性
+const ipcWhitelist = {
+  invoke: [
+    'app:win:minimize', 'app:win:maximize', 'app:win:close',
+    'app:media:parse',
+    'app:task:create', 'app:task:list', 'app:task:control',
+    'app:settings:get', 'app:settings:set',
+    'app:auth:bili:web', 'app:auth:yt:web', 'app:auth:cookie:import',
+    'app:batch:bili:fav', 'app:batch:bili:series',
+    'app:resource:user', 'app:resource:comments', 'app:resource:danmaku',
+    'app:diag:run', 'app:log:export', 'app:log:import',
+    'app:shell:openExternal', 'app:shell:openPath', 'app:shell:showItem',
+    'app:dialog:openDirectory', 'app:dialog:openFile'
+  ],
+  on: ['app:dnd-url', 'app:task-update'],
+};
 
 contextBridge.exposeInMainWorld('api', {
-  // 解析
-  parse: (url) => call('app:media:parse', url),
-
-  // 任务
-  createTask: (payload) => call('app:task:create', payload),
-  listTasks: () => call('app:task:list'),
-  controlTask: (id, action) => call('app:task:control', { id, action }),
-
-  // 设置
-  getSettings: () => call('app:settings:get'),
-  setSettings: (patch) => call('app:settings:set', patch),
-
-  // 登录
-  openBiliLogin: () => call('app:auth:bili'),
-  openYTLogin: () => call('app:auth:yt'),
-  importCookie: (kind, cookie) => call('app:auth:cookie:import', { kind, cookie }),
-
-  // 扩展资源/批量 (NEW)
-  downloadBiliUserCard: (mid, targetDir) => call('app:resource:bili:userCard', { mid, targetDir }),
-  planBatchByFavorite: (mediaId, rootDir) => call('app:resource:bili:batchFav', { mediaId, rootDir }),
-  listSeries: (mid, rootDir) => call('app:resource:bili:batchSeries', { mid, rootDir }),
-  commentsExport: (meta) => call('app:resource:comments:export', { meta }),
-  danmakuExport: (meta, fmt) => call('app:resource:danmaku:export', { meta, fmt }),
-  
-  // 日志/诊断
-  diagRun: () => call('app:diag:run'),
-  logRecent: (n=2000) => call('app:log:recent', n),
-  logExport: () => call('app:log:export'),
-  logImport: () => call('app:log:import'),
-
-  // 帮助
-  openFfmpegSite: () => call('app:help:ffmpeg'),
-
-  // 窗控 / Shell (NEW)
-  minimize: () => call('app:win:min'),
-  maximize: () => call('app:win:max'),
-  close: () => call('app:win:close'),
-  openFile: (filePath) => call('app:shell:openFile', filePath),
-  openDir: (dirPath) => call('app:shell:openDir', dirPath)
+  // 调用 (渲染进程 -> 主进程)
+  invoke: async (channel: string, ...args: any[]) => {
+    if (ipcWhitelist.invoke.includes(channel)) {
+      const { ok, data, error } = await ipcRenderer.invoke(channel, ...args);
+      if (ok) return data;
+      // 将主进程的错误重新抛出，以便在前端捕获
+      const err = new Error(error.message);
+      err.name = error.name;
+      throw err;
+    }
+    throw new Error(`IPC 调用被拒绝：非法的通道 '${channel}'`);
+  },
+  // 监听 (主进程 -> 渲染进程)
+  on: (channel: string, callback: (...args: any[]) => void) => {
+    if (ipcWhitelist.on.includes(channel)) {
+      const subscription = (_event: IpcRendererEvent, ...args: any[]) => callback(...args);
+      ipcRenderer.on(channel, subscription);
+      // 返回一个函数，用于在组件卸载时清理监听器
+      return () => ipcRenderer.removeListener(channel, subscription);
+    }
+    throw new Error(`IPC 监听被拒绝：非法的通道 '${channel}'`);
+  }
 });

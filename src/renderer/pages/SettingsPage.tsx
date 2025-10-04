@@ -1,64 +1,221 @@
-import React from 'react';
-declare global { interface Window { api:any } }
+import React, from 'react';
+import {
+  Button,
+  Input,
+  Slider,
+  Switch,
+  Field,
+  Card,
+  Body1,
+  Dropdown,
+  Option,
+  makeStyles,
+  shorthands,
+  Label,
+  useToastController,
+  Toast,
+  ToastTitle,
+  Toaster
+} from '@fluentui/react-components';
+import { useSettings } from '../contexts/SettingsContext';
+import { FolderOpenRegular, ImageRegular } from '@fluentui/react-icons';
 
-export default function SettingsPage(){
-  const [s, setS] = React.useState<any>({});
+// --- Fluent UI 样式钩子 ---
+const useStyles = makeStyles({
+  root: {
+    display: 'flex',
+    flexDirection: 'column',
+    ...shorthands.gap('24px'),
+  },
+  card: {
+    display: 'flex',
+    flexDirection: 'column',
+    ...shorthands.gap('16px'),
+    ...shorthands.padding('16px'),
+  },
+  grid: {
+    display: 'grid',
+    ...shorthands.gap('16px'),
+    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+  },
+  field: {
+    display: 'flex',
+    flexDirection: 'column',
+    ...shorthands.gap('4px'),
+  },
+  inputWithButton: {
+    display: 'flex',
+    ...shorthands.gap('8px'),
+  }
+});
 
-  async function load(){ setS(await window.api.getSettings()); }
-  async function save(){ const r = await window.api.setSettings(s); setS(r); alert('已保存'); }
+// --- 主页面组件 ---
+export default function SettingsPage() {
+  const styles = useStyles();
+  const { settings, saveSettings } = useSettings();
+  const toasterId = "settings-toaster";
+  const { dispatchToast } = useToastController(toasterId);
 
-  React.useEffect(()=>{ load(); }, []);
+  const handleSave = async (patch: Record<string, any>) => {
+    try {
+      await saveSettings(patch);
+      dispatchToast(
+        <Toast><ToastTitle>设置已保存</ToastTitle></Toast>,
+        { intent: 'success' }
+      );
+    } catch (e: any) {
+      dispatchToast(
+        <Toast><ToastTitle>保存失败: {e.message}</ToastTitle></Toast>,
+        { intent: 'error' }
+      );
+    }
+  };
+
+  const selectPath = async (field: 'downloadDir' | 'backgroundImagePath') => {
+    const method = field === 'downloadDir' ? 'app:dialog:openDirectory' : 'app:dialog:openFile';
+    const path = await window.api.invoke(method);
+    if (path) {
+      handleSave({ [field]: path });
+    }
+  };
+
+  if (!settings) return <Spinner label="正在加载设置..." />;
 
   return (
-    <div>
-      <h2>设置</h2>
-      <section>
-        <h3>下载</h3>
-        <div style={{display:'grid', gap:8, gridTemplateColumns:'1fr 1fr'}}>
-          <label>下载目录<input value={s.downloadDir||''} onChange={e=>setS({...s, downloadDir:e.target.value})}/></label>
-          <label>并发数（1-10）
-            <input type="range" min={1} max={10} value={s.concurrency||4} onChange={e=>setS({...s, concurrency:+e.target.value})}/>
-            <span style={{marginLeft:8}}>{s.concurrency||4}</span>
-          </label>
-          <label>分片大小(MB)<input type="number" min={2} max={64} value={s.chunkSizeMB||8} onChange={e=>setS({...s, chunkSizeMB:+e.target.value})}/></label>
-          <label>编码偏好
-            <select value={s.codecPref || 'avc1'} onChange={e=>setS({...s, codecPref: e.target.value})}>
-              <option value="avc1">H.264 (默认)</option>
-              <option value="hev1">H.265 / HEVC</option>
-              <option value="av01">AV1</option>
-            </select>
-          </label>
-          <label>FFmpeg 路径（留空使用系统 PATH）
-            <input value={s.ffmpegPath||''} onChange={e=>setS({...s, ffmpegPath:e.target.value})} placeholder="例如：C:\ffmpeg\bin\ffmpeg.exe"/>
-            <button style={{marginLeft:8}} onClick={()=>window.api.openFfmpegSite()}>获取 FFmpeg</button>
-          </label>
-          <label>文件名模板
-            <input value={s.filenameTpl||'{title}-{id}'} onChange={e=>setS({...s, filenameTpl:e.target.value})}/>
-            <div style={{opacity:.7}}>占位符：{"{title} {id}"}</div>
-          </label>
-        </div>
-      </section>
+    <div className={styles.root}>
+      <Toaster toasterId={toasterId} />
 
-      <section>
-        <h3>弹幕样式</h3>
-        <div style={{display:'grid', gap:8, gridTemplateColumns:'repeat(3, 1fr)'}}>
-          <label>宽度<input type="number" value={s.danmaku?.width||3840} onChange={e=>setS({...s, danmaku:{...s.danmaku, width:+e.target.value}})}/></label>
-          <label>高度<input type="number" value={s.danmaku?.height||2160} onChange={e=>setS({...s, danmaku:{...s.danmaku, height:+e.target.value}})}/></label>
-          <label>FPS<input type="number" value={s.danmaku?.fps||120} onChange={e=>setS({...s, danmaku:{...s.danmaku, fps:+e.target.value}})}/></label>
-          <label>字体<input value={s.danmaku?.fontName||'Microsoft YaHei'} onChange={e=>setS({...s, danmaku:{...s.danmaku, fontName:e.target.value}})}/></label>
-          <label>字号<input type="number" value={s.danmaku?.fontSize||42} onChange={e=>setS({...s, danmaku:{...s.danmaku, fontSize:+e.target.value}})}/></label>
-          <label>描边<input type="number" value={s.danmaku?.outline||3} onChange={e=>setS({...s, danmaku:{...s.danmaku, outline:+e.target.value}})}/></label>
-          <label>阴影<input type="number" value={s.danmaku?.shadow||0} onChange={e=>setS({...s, danmaku:{...s.danmaku, shadow:+e.target.value}})}/></label>
-          <label>透明度(0-1)<input type="number" step="0.05" min={0} max={1} value={s.danmaku?.opacity||0} onChange={e=>setS({...s, danmaku:{...s.danmaku, opacity:+e.target.value}})}/></label>
-          <label>滚动时长(s)<input type="number" value={s.danmaku?.scrollDuration||8} onChange={e=>setS({...s, danmaku:{...s.danmaku, scrollDuration:+e.target.value}})}/></label>
-          <label>静止时长(s)<input type="number" value={s.danmaku?.staticDuration||4.5} onChange={e=>setS({...s, danmaku:{...s.danmaku, staticDuration:+e.target.value}})}/></label>
-          <label>轨道高度<input type="number" value={s.danmaku?.trackHeight||48} onChange={e=>setS({...s, danmaku:{...s.danmaku, trackHeight:+e.target.value}})}/></label>
+      <Card className={styles.card}>
+        <Body1><b>外观与行为</b></Body1>
+        <div className={styles.grid}>
+          <Field className={styles.field} label="应用主题">
+            <Dropdown
+              value={settings.theme || 'light'}
+              onOptionSelect={(_, d) => handleSave({ theme: d.optionValue })}
+            >
+              <Option value="light">亮色模式</Option>
+              <Option value="dark">暗色模式</Option>
+            </Dropdown>
+          </Field>
+          <Field className={styles.field} label="自定义背景图">
+            <div className={styles.inputWithButton}>
+              <Input
+                readOnly
+                value={settings.backgroundImagePath || ''}
+                placeholder="未设置"
+              />
+              <Button icon={<ImageRegular />} onClick={() => selectPath('backgroundImagePath')}>选择</Button>
+            </div>
+          </Field>
+          <Field className={styles.field} label={`背景不透明度: ${Math.round((settings.backgroundOpacity ?? 0.7) * 100)}%`}>
+            <Slider
+              min={0.1} max={1} step={0.05}
+              value={settings.backgroundOpacity ?? 0.7}
+              onChange={(_, d) => handleSave({ backgroundOpacity: d.value })}
+            />
+          </Field>
+          <div />
+          <Field className={styles.field}>
+            <Switch
+              label="关闭时最小化到系统托盘"
+              checked={settings.minimizeToTray ?? true}
+              onChange={(_, d) => handleSave({ minimizeToTray: d.checked })}
+            />
+          </Field>
+          <Field className={styles.field}>
+            <Switch
+              label="下载完成后发送系统通知"
+              checked={settings.notifyOnComplete ?? true}
+              onChange={(_, d) => handleSave({ notifyOnComplete: d.checked })}
+            />
+          </Field>
         </div>
-      </section>
+      </Card>
 
-      <div style={{marginTop:12}}>
-        <button onClick={save}>保存</button>
-      </div>
+      <Card className={styles.card}>
+        <Body1><b>下载设置</b></Body1>
+        <div className={styles.grid}>
+          <Field className={styles.field} label="下载目录" required>
+            <div className={styles.inputWithButton}>
+              <Input
+                readOnly
+                value={settings.downloadDir || ''}
+                placeholder="请选择一个目录"
+              />
+              <Button icon={<FolderOpenRegular />} onClick={() => selectPath('downloadDir')}>选择</Button>
+            </div>
+          </Field>
+          <Field className={styles.field} label={`同时下载任务数: ${settings.concurrency ?? 4}`}>
+            <Slider
+              min={1} max={10} step={1}
+              value={settings.concurrency ?? 4}
+              onChange={(_, d) => handleSave({ concurrency: d.value })}
+            />
+          </Field>
+          <Field className={styles.field} label="文件名模板">
+            <Input
+              value={settings.filenameTpl || '{title}-{id}'}
+              onBlur={(e) => handleSave({ filenameTpl: e.target.value })}
+              placeholder="{title}-{id}"
+            />
+            <Caption1>可用变量: {`{title}`} {`{id}`}</Caption1>
+          </Field>
+          <Field className={styles.field} label="FFmpeg 路径 (可选)">
+             <Input
+              value={settings.ffmpegPath || ''}
+              onBlur={(e) => handleSave({ ffmpegPath: e.target.value })}
+              placeholder="留空则使用系统环境变量"
+            />
+          </Field>
+        </div>
+      </Card>
+
+      <Card className={styles.card}>
+        <Body1><b>弹幕样式 (ASS 格式)</b></Body1>
+        <div className={styles.grid}>
+          <Field className={styles.field} label="字体名称">
+            <Input
+              value={settings.danmaku?.fontName || 'Microsoft YaHei'}
+              onBlur={(e) => handleSave({ danmaku: { ...settings.danmaku, fontName: e.target.value } })}
+            />
+          </Field>
+           <Field className={styles.field} label="字体大小">
+            <Input
+              type="number"
+              value={String(settings.danmaku?.fontSize || 42)}
+              onChange={(_, d) => handleSave({ danmaku: { ...settings.danmaku, fontSize: Number(d.value) } })}
+            />
+          </Field>
+           <Field className={styles.field} label="描边宽度">
+            <Input
+              type="number"
+              value={String(settings.danmaku?.outline || 3)}
+              onChange={(_, d) => handleSave({ danmaku: { ...settings.danmaku, outline: Number(d.value) } })}
+            />
+          </Field>
+          <Field className={styles.field} label="滚动弹幕时长 (秒)">
+            <Input
+              type="number"
+              value={String(settings.danmaku?.scrollDuration || 8)}
+              onChange={(_, d) => handleSave({ danmaku: { ...settings.danmaku, scrollDuration: Number(d.value) } })}
+            />
+          </Field>
+          <Field className={styles.field} label="顶部/底部弹幕时长 (秒)">
+            <Input
+              type="number"
+              value={String(settings.danmaku?.staticDuration || 5)}
+              onChange={(_, d) => handleSave({ danmaku: { ...settings.danmaku, staticDuration: Number(d.value) } })}
+            />
+          </Field>
+          <Field className={styles.field} label={`弹幕不透明度: ${Math.round((settings.danmaku?.opacity ?? 1) * 100)}%`}>
+            <Slider
+              min={0} max={1} step={0.1}
+              value={settings.danmaku?.opacity ?? 1}
+              onChange={(_, d) => handleSave({ danmaku: { ...settings.danmaku, opacity: d.value } })}
+            />
+          </Field>
+        </div>
+      </Card>
     </div>
   );
 }

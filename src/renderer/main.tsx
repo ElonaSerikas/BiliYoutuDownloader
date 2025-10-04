@@ -1,23 +1,32 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { HashRouter, Routes, Route } from 'react-router-dom';
-import MainLayout from './layout/MainLayout';
-import SearchPage from './pages/SearchPage';
-import DownloadPage from './pages/DownloadPage';
-import SettingsPage from './pages/SettingsPage';
-import UserPage from './pages/UserPage';
-import Diagnostics from './routes/Diagnostics';
+import { FluentProvider, webLightTheme, teamsDarkTheme, Theme } from '@fluentui/react-components';
+
+import App from './App';
+import { SettingsProvider, useSettings } from './contexts/SettingsContext';
+import ErrorBoundary from './components/ErrorBoundary';
+import './styles/index.css'; // 全局样式
+
+// 主题切换组件
+const ThemedApp = () => {
+  const { settings } = useSettings();
+  const theme: Theme = settings?.theme === 'dark' ? teamsDarkTheme : webLightTheme;
+  return (
+    <FluentProvider theme={theme}>
+      <App />
+    </FluentProvider>
+  );
+};
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <HashRouter>
-    <Routes>
-      <Route path="/" element={<MainLayout/>}>
-        <Route index element={<SearchPage/>} />
-        <Route path="downloads" element={<DownloadPage/>} />
-        <Route path="settings" element={<SettingsPage/>} />
-        <Route path="user" element={<UserPage/>} />
-        <Route path="diagnostics" element={<Diagnostics/>} />
-      </Route>
-    </Routes>
-  </HashRouter>
+  <React.StrictMode>
+    <ErrorBoundary>
+      <SettingsProvider>
+        <HashRouter>
+          <ThemedApp />
+        </HashRouter>
+      </SettingsProvider>
+    </ErrorBoundary>
+  </React.StrictMode>
 );
