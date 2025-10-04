@@ -1,24 +1,19 @@
-// bili-danmaku.ts
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import got from 'got';
-import { buildASS } from './ass';
+import { buildASS, Style as DanmakuStyle } from './ass';
 
-export type DanStyle = {
-  width:number; height:number; fps:number;
-  fontName:string; fontSize:number; outline:number; shadow:number; opacity:number;
-  scrollDuration:number; staticDuration:number; trackHeight:number;
-};
+export type DanStyle = DanmakuStyle;
 
-const DEFAULT:DanStyle = {
-  width:3840, height:2160, fps:120,
-  fontName:'Microsoft YaHei', fontSize:42, outline:3, shadow:0, opacity:0,
-  scrollDuration:8.0, staticDuration:4.5, trackHeight:48
+const DEFAULT_STYLE: DanStyle = {
+  width: 1920, height: 1080, fps: 60,
+  fontName: 'Microsoft YaHei', fontSize: 42, outline: 2, shadow: 1, opacity: 0.8,
+  scrollDuration: 8.0, staticDuration: 4.5, trackHeight: 48
 };
 
 export async function exportBiliDanmaku(meta:any, fmt:'xml'|'ass', style?:Partial<DanStyle>){
-  const cfg = { ...DEFAULT, ...(style||{}) };
-  const cid = meta.meta?.cid; if (!cid) throw new Error('缺少 cid');
+  const cfg = { ...DEFAULT_STYLE, ...(style||{}) };
+  const cid = meta.meta?.cid; if (!cid) throw new Error('缺少 cid, 无法下载弹幕');
 
   const url = `https://api.bilibili.com/x/v1/dm/list.so?oid=${cid}`;
   const xml = await got(url, { headers: { Referer:'https://www.bilibili.com/' } }).text();
@@ -26,7 +21,7 @@ export async function exportBiliDanmaku(meta:any, fmt:'xml'|'ass', style?:Partia
   const base = path.join(meta.target, meta.id);
   const xmlPath = `${base}-danmaku.xml`;
   await fs.writeFile(xmlPath, xml, 'utf-8');
-  if (fmt==='xml') return xmlPath;
+  if (fmt === 'xml') return xmlPath;
 
   const events = parseXML(xml);
   const ass = buildASS({ title: meta.title || meta.id, style: cfg, events });

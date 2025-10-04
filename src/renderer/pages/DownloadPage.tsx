@@ -1,44 +1,24 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
-  Button,
-  Card,
-  ProgressBar,
-  Body1,
-  Caption1,
-  Spinner,
-  Tag,
-  Tab,
-  TabList,
-  Persona,
-  Menu,
-  MenuTrigger,
-  MenuList,
-  MenuItem,
-  MenuPopover,
-  makeStyles,
-  shorthands,
-  tokens,
+  Button, Card, ProgressBar, Body1, Caption1, Spinner, Tag, Tab, TabList, Persona, Menu, MenuTrigger, MenuList, MenuItem, MenuPopover, makeStyles, shorthands, tokens,
 } from '@fluentui/react-components';
 import {
-  FolderOpenRegular,
-  DocumentRegular,
-  PlayRegular,
-  PauseRegular,
-  DismissRegular,
-  ArrowClockwiseRegular,
-  MoreHorizontalRegular,
-  CheckmarkCircleRegular,
-  ErrorCircleRegular,
-  WarningRegular,
-  TimerRegular
+  FolderOpenRegular, DocumentRegular, PlayRegular, PauseRegular, DismissRegular, ArrowClockwiseRegular, MoreHorizontalRegular, CheckmarkCircleRegular, ErrorCircleRegular, WarningRegular, TimerRegular
 } from '@fluentui/react-icons';
 import { formatBytes } from '../utils/format';
-import type { Task } from '../../main/services/downloader/DownloadManager';
 
-// --- 类型定义 ---
+// This type must be kept in sync with the `Task` type in `src/main/services/downloader/DownloadManager.ts`
+export type Task = {
+  id: string; title: string; platform: 'bili' | 'yt'; target: string;
+  streams: { video?: string; audio?: string; };
+  status: 'queued' | 'running' | 'paused' | 'done' | 'error' | 'canceled';
+  progress: { total: number; downloaded: number; speed: number };
+  meta: any; settings: Record<string, any>; startedAt: number;
+  updatedAt: number; outFile: string | null; error?: string;
+};
+
 type TabValue = 'all' | 'downloading' | 'done' | 'error';
 
-// --- Fluent UI 样式钩子 ---
 const useStyles = makeStyles({
   grid: {
     display: 'grid',
@@ -46,38 +26,20 @@ const useStyles = makeStyles({
     gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
   },
   card: {
-    display: 'flex',
-    flexDirection: 'column',
-    ...shorthands.gap('10px'),
+    display: 'flex', flexDirection: 'column', ...shorthands.gap('10px'),
     transitionProperty: 'transform, box-shadow',
-    transitionDuration: '0.2s',
-    transitionTimingFunction: 'ease-in-out',
-    ':hover': {
-      transform: 'translateY(-4px)',
-      boxShadow: tokens.shadow16,
-    }
+    transitionDuration: '0.2s', transitionTimingFunction: 'ease-in-out',
+    ':hover': { transform: 'translateY(-4px)', boxShadow: tokens.shadow16, }
   },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  persona: {
-    minWidth: 0, // 修复 Persona 文本过长导致布局挤压的问题
-  },
-  actions: {
-    display: 'flex',
-    ...shorthands.gap('8px'),
-    flexWrap: 'wrap',
-  },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
+  persona: { minWidth: 0 },
+  actions: { display: 'flex', ...shorthands.gap('8px'), flexWrap: 'wrap' },
 });
 
-// --- 任务卡片组件 ---
 const TaskCard = ({ task }: { task: Task }) => {
   const styles = useStyles();
   const pct = task.progress.total > 0 ? task.progress.downloaded / task.progress.total : 0;
 
-  // 根据任务状态显示不同的标签和图标
   const StatusTag = () => {
     switch (task.status) {
       case 'running': return <Tag appearance="brand" icon={<Spinner size="tiny" />}>下载中</Tag>;
@@ -99,19 +61,14 @@ const TaskCard = ({ task }: { task: Task }) => {
       <div className={styles.header}>
         <Persona
           className={styles.persona}
-          avatar={{ color: task.platform === 'bili' ? 'cornflower' : 'red', 'aria-hidden': true, name: task.platform.toUpperCase() }}
-          name={<Body1 block><b>{task.title}</b></Body1>}
+          avatar={{ color: task.platform === 'bili' ? 'cornflowerblue' : 'red', name: task.platform.toUpperCase() }}
+          primaryText={<Body1 block><b>{task.title}</b></Body1>}
           secondaryText={<Caption1>{task.id}</Caption1>}
         />
         <StatusTag />
       </div>
 
-      <ProgressBar
-        value={pct}
-        shape="rounded"
-        thickness="medium"
-        color={task.status === 'error' ? 'error' : 'brand'}
-      />
+      <ProgressBar value={pct} shape="rounded" thickness="medium" color={task.status === 'error' ? 'error' : 'brand'} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <Caption1>{formatBytes(task.progress.downloaded)} / {formatBytes(task.progress.total)}</Caption1>
@@ -143,24 +100,19 @@ const TaskCard = ({ task }: { task: Task }) => {
   );
 };
 
-// --- 主页面组件 ---
 export default function DownloadPage() {
   const styles = useStyles();
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [activeTab, setActiveTab] = useState<TabValue>('all');
 
   useEffect(() => {
-    // 首次加载任务列表
     window.api.invoke('app:task:list').then(setAllTasks);
-    // 监听主进程的任务更新事件
     const removeListener = window.api.on('app:task-update', (updatedTasks: Task[]) => {
       setAllTasks(updatedTasks);
     });
-    // 组件卸载时清理监听器
     return () => { removeListener?.(); };
   }, []);
 
-  // 根据标签页过滤任务
   const filteredTasks = useMemo(() => {
     switch (activeTab) {
       case 'downloading': return allTasks.filter(t => ['running', 'queued', 'paused'].includes(t.status));

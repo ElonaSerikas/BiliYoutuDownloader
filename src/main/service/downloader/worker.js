@@ -1,38 +1,42 @@
-import { parentPort, workerData } from 'node:worker_threads';
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
-import path from 'node:path';
-import { spawn } from 'node:child_process';
-import got from 'got';
-import sanitize from 'sanitize-filename';
-import type { Task } from './DownloadManager';
+const { parentPort, workerData } = require('node:worker_threads');
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const got = require('got');
+const sanitize = require('sanitize-filename');
 
-// --- 类型与初始化 ---
-const { task, ffmpegBin } = workerData as { task: Task; ffmpegBin: string };
+const { task, ffmpegBin } = workerData;
 const FFMPEG = ffmpegBin || 'ffmpeg';
-let isAborted = false;
 
+let isAborted = false;
 parentPort?.on('message', (msg) => {
   if (msg === 'abort') {
     isAborted = true;
   }
 });
 
-// --- 工具函数 ---
-function msg(type: 'progress' | 'done' | 'error', data: any) { parentPort?.postMessage({ type, data }); }
-function applyTpl(tpl: string, ctx: Record<string, any>) {
+function msg(type, data) { parentPort?.postMessage({ type, data }); }
+
+function applyTpl(tpl, ctx) {
   const result = tpl.replace(/\{(\w+)\}/g, (_, k) => (ctx[k] ?? ''));
   return sanitize(result);
 }
 
-// --- 下载核心 ---
-async function downloadStream(url: string, outPath: string, onProgress: (chunk: number) => void) {
-  const { len } = await got.head(url).then(res => ({ len: Number(res.headers['content-length'] || 0) }));
-  let downloaded = 0;
-  try { downloaded = (await fsp.stat(outPath)).size; } catch { /* 文件不存在 */ }
+async function downloadStream(url, outPath, onProgress) {
+  let totalSize = 0;
+  try {
+      const headRes = await got.head(url, { timeout: { request: 15000 }});
+      totalSize = Number(headRes.headers['content-length'] || 0);
+  } catch(e) {
+      console.warn(`Failed to get size for ${url}`, e.message);
+  }
 
-  if (downloaded >= len) {
-    onProgress(len);
+  let downloaded = 0;
+  try { downloaded = (await fsp.stat(outPath)).size; } catch { /* noop */ }
+
+  if (totalSize > 0 && downloaded >= totalSize) {
+    onProgress(totalSize);
     return;
   }
 
@@ -42,7 +46,7 @@ async function downloadStream(url: string, outPath: string, onProgress: (chunk: 
     parentPort?.on('message', (m) => { if (m === 'abort') { stream.destroy(); reject(new Error("任务已取消")); } });
   });
 
-  const downloadPromise = new Promise<void>((resolve, reject) => {
+  const downloadPromise = new Promise((resolve, reject) => {
     const fileStream = fs.createWriteStream(outPath, { flags: 'a' });
     stream.on('downloadProgress', p => onProgress(downloaded + p.transferred));
     stream.pipe(fileStream);
@@ -54,73 +58,77 @@ async function downloadStream(url: string, outPath: string, onProgress: (chunk: 
   await Promise.race([downloadPromise, abortPromise]);
 }
 
-// --- FFmpeg 合并 ---
-async function mux(video: string | null, audio: string | null, outPath: string) {
+async function mux(video, audio, outPath) {
   const finalOut = outPath.replace(/\.mp4$/i, (audio && !video) ? '.m4a' : '.mp4');
-  if (video && audio) {
-    const args = ['-y', '-i', video, '-i', audio, '-c', 'copy', '-movflags', 'faststart', finalOut];
-    await new Promise<void>((res, rej) => spawn(FFFMPEG, args, { stdio: 'ignore' }).on('exit', c => c === 0 ? res() : rej(new Error(`FFmpeg 合并失败 (代码: ${c})`))));
-  } else if (video) {
-    await fsp.rename(video, finalOut);
-  } else if (audio) {
-    await fsp.rename(audio, finalOut);
+  const args = ['-y'];
+  if (video) args.push('-i', video);
+  if (audio) args.push('-i', audio);
+  args.push('-c', 'copy', '-movflags', 'faststart', finalOut);
+  
+  if (!video && !audio) throw new Error('没有提供有效的视频或音频流');
+  if (!video || !audio) {
+      const source = video || audio;
+      await fsp.rename(source, finalOut);
   } else {
-    throw new Error('没有提供有效的视频或音频流');
+    await new Promise((resolve, reject) => {
+      const proc = spawn(FFMPEG, args, { stdio: 'pipe' });
+      proc.on('exit', code => code === 0 ? resolve() : reject(new Error(`FFmpeg 合并失败 (代码: ${code})`)));
+      proc.on('error', reject);
+    });
   }
   return finalOut;
 }
 
-// --- 主执行函数 ---
 (async function main() {
   const tmpDir = path.join(task.target, `.tmp_${task.id}`);
   await fsp.mkdir(tmpDir, { recursive: true });
 
   try {
-    let vPath: string | null = null;
-    let aPath: string | null = null;
+    let vPath = null;
+    let aPath = null;
     let totalSize = 0;
-    let totalDownloaded = 0;
+    let downloadedSize = 0;
 
-    const streamsToDownload: { type: 'video' | 'audio', url: string }[] = [];
+    const streamsToDownload = [];
     if (task.streams.video) streamsToDownload.push({ type: 'video', url: task.streams.video });
     if (task.streams.audio) streamsToDownload.push({ type: 'audio', url: task.streams.audio });
 
-    // 首先获取所有流的总大小
-    await Promise.all(streamsToDownload.map(async s => {
-      const { len } = await got.head(s.url).then(res => ({ len: Number(res.headers['content-length'] || 0) }));
-      totalSize += len;
-    }));
+    // 预计算总大小
+    for(const s of streamsToDownload) {
+        try {
+            const headRes = await got.head(s.url);
+            totalSize += Number(headRes.headers['content-length'] || 0);
+        } catch {}
+    }
 
-    msg('progress', { total: totalSize, downloaded: totalDownloaded });
-
-    // 依次下载
+    msg('progress', { total: totalSize, downloaded: 0 });
+    
     if (task.streams.video) {
       vPath = path.join(tmpDir, 'video.mp4');
       await downloadStream(task.streams.video, vPath, (d) => {
-        msg('progress', { total: totalSize, downloaded: totalDownloaded + d });
+        msg('progress', { total: totalSize, downloaded: downloadedSize + d });
       });
-      totalDownloaded += (await fsp.stat(vPath)).size;
+      if(isAborted) throw new Error("任务已取消");
+      downloadedSize += (await fsp.stat(vPath)).size;
     }
-    if (isAborted) return;
+    
     if (task.streams.audio) {
       aPath = path.join(tmpDir, 'audio.m4a');
       await downloadStream(task.streams.audio, aPath, (d) => {
-        msg('progress', { total: totalSize, downloaded: totalDownloaded + d });
+        msg('progress', { total: totalSize, downloaded: downloadedSize + d });
       });
+      if(isAborted) throw new Error("任务已取消");
     }
 
-    if (isAborted) return;
-
-    // 应用文件名模板
     const nameCtx = { title: task.title, id: task.meta?.bvid || task.id };
     const filename = applyTpl(task.settings?.filenameTpl || '{title}-{id}', nameCtx);
     const out = path.join(task.target, `${filename}.mp4`);
 
     const finalFile = await mux(vPath, aPath, out);
-
     msg('done', { file: finalFile });
-  } catch (e: any) {
-    if (e.message !== "任务已取消") {
+
+  } catch (e) {
+    if (!isAborted) {
         msg('error', { message: e.message });
     }
   } finally {

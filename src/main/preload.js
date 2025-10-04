@@ -10,7 +10,7 @@ const ipcWhitelist = {
     'app:auth:bili:web', 'app:auth:yt:web', 'app:auth:cookie:import',
     'app:batch:bili:fav', 'app:batch:bili:series',
     'app:resource:user', 'app:resource:comments', 'app:resource:danmaku',
-    'app:diag:run', 'app:log:export', 'app:log:import',
+    'app:diag:run', 'app:log:export', 'app:log:import', 'app:log:recent',
     'app:shell:openExternal', 'app:shell:openPath', 'app:shell:showItem',
     'app:dialog:openDirectory', 'app:dialog:openFile'
   ],
@@ -41,3 +41,13 @@ contextBridge.exposeInMainWorld('api', {
     throw new Error(`IPC 监听被拒绝：非法的通道 '${channel}'`);
   }
 });
+
+// 声明全局类型
+declare global {
+  interface Window {
+    api: {
+      invoke: (channel: string, ...args: any[]) => Promise<any>;
+      on: (channel: string, callback: (...args: any[]) => void) => () => void;
+    };
+  }
+}

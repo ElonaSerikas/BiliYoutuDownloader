@@ -10,9 +10,12 @@ export default defineConfig({
         preload: path.resolve(__dirname, 'src/main/preload.ts')
       },
       formats: ['cjs'],
-      fileName: (format, entry) => `${entry}.js`
+      fileName: (_format, entry) => `${entry}.js`
     },
-    rollupOptions: { external: ['electron'] },
-    sourcemap: true
+    rollupOptions: {
+      external: ['electron']
+    },
+    sourcemap: true,
+    minify: false,
   }
 });

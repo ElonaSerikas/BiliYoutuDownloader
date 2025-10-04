@@ -1,4 +1,4 @@
-import React, from 'react';
+import React from 'react'; // Corrected: Removed trailing comma
 import {
   Button,
   Input,
@@ -11,16 +11,15 @@ import {
   Option,
   makeStyles,
   shorthands,
-  Label,
   useToastController,
   Toast,
   ToastTitle,
-  Toaster
+  Toaster,
+  Caption1
 } from '@fluentui/react-components';
-import { useSettings } from '../contexts/SettingsContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import { FolderOpenRegular, ImageRegular } from '@fluentui/react-icons';
 
-// --- Fluent UI 样式钩子 ---
 const useStyles = makeStyles({
   root: {
     display: 'flex',
@@ -31,7 +30,7 @@ const useStyles = makeStyles({
     display: 'flex',
     flexDirection: 'column',
     ...shorthands.gap('16px'),
-    ...shorthands.padding('16px'),
+    ...shorthands.padding('20px'),
   },
   grid: {
     display: 'grid',
@@ -46,10 +45,10 @@ const useStyles = makeStyles({
   inputWithButton: {
     display: 'flex',
     ...shorthands.gap('8px'),
+    alignItems: 'center',
   }
 });
 
-// --- 主页面组件 ---
 export default function SettingsPage() {
   const styles = useStyles();
   const { settings, saveSettings } = useSettings();
@@ -79,20 +78,22 @@ export default function SettingsPage() {
     }
   };
 
-  if (!settings) return <Spinner label="正在加载设置..." />;
+  if (!settings) return null;
 
   return (
     <div className={styles.root}>
       <Toaster toasterId={toasterId} />
+      <h2>应用设置</h2>
 
       <Card className={styles.card}>
         <Body1><b>外观与行为</b></Body1>
         <div className={styles.grid}>
           <Field className={styles.field} label="应用主题">
             <Dropdown
-              value={settings.theme || 'light'}
+              value={settings.theme || 'system'}
               onOptionSelect={(_, d) => handleSave({ theme: d.optionValue })}
             >
+              <Option value="system">跟随系统</Option>
               <Option value="light">亮色模式</Option>
               <Option value="dark">暗色模式</Option>
             </Dropdown>
@@ -103,6 +104,7 @@ export default function SettingsPage() {
                 readOnly
                 value={settings.backgroundImagePath || ''}
                 placeholder="未设置"
+                style={{ flexGrow: 1 }}
               />
               <Button icon={<ImageRegular />} onClick={() => selectPath('backgroundImagePath')}>选择</Button>
             </div>
@@ -125,8 +127,8 @@ export default function SettingsPage() {
           <Field className={styles.field}>
             <Switch
               label="下载完成后发送系统通知"
-              checked={settings.notifyOnComplete ?? true}
-              onChange={(_, d) => handleSave({ notifyOnComplete: d.checked })}
+              checked={settings.notify ?? true}
+              onChange={(_, d) => handleSave({ notify: d.checked })}
             />
           </Field>
         </div>
@@ -141,6 +143,7 @@ export default function SettingsPage() {
                 readOnly
                 value={settings.downloadDir || ''}
                 placeholder="请选择一个目录"
+                style={{ flexGrow: 1 }}
               />
               <Button icon={<FolderOpenRegular />} onClick={() => selectPath('downloadDir')}>选择</Button>
             </div>
@@ -154,7 +157,7 @@ export default function SettingsPage() {
           </Field>
           <Field className={styles.field} label="文件名模板">
             <Input
-              value={settings.filenameTpl || '{title}-{id}'}
+              defaultValue={settings.filenameTpl || '{title}-{id}'}
               onBlur={(e) => handleSave({ filenameTpl: e.target.value })}
               placeholder="{title}-{id}"
             />
@@ -162,7 +165,7 @@ export default function SettingsPage() {
           </Field>
           <Field className={styles.field} label="FFmpeg 路径 (可选)">
              <Input
-              value={settings.ffmpegPath || ''}
+              defaultValue={settings.ffmpegPath || ''}
               onBlur={(e) => handleSave({ ffmpegPath: e.target.value })}
               placeholder="留空则使用系统环境变量"
             />
@@ -175,42 +178,42 @@ export default function SettingsPage() {
         <div className={styles.grid}>
           <Field className={styles.field} label="字体名称">
             <Input
-              value={settings.danmaku?.fontName || 'Microsoft YaHei'}
+              defaultValue={settings.danmaku?.fontName || 'Microsoft YaHei'}
               onBlur={(e) => handleSave({ danmaku: { ...settings.danmaku, fontName: e.target.value } })}
             />
           </Field>
            <Field className={styles.field} label="字体大小">
             <Input
               type="number"
-              value={String(settings.danmaku?.fontSize || 42)}
+              defaultValue={String(settings.danmaku?.fontSize || 42)}
               onChange={(_, d) => handleSave({ danmaku: { ...settings.danmaku, fontSize: Number(d.value) } })}
             />
           </Field>
            <Field className={styles.field} label="描边宽度">
             <Input
               type="number"
-              value={String(settings.danmaku?.outline || 3)}
+              defaultValue={String(settings.danmaku?.outline || 3)}
               onChange={(_, d) => handleSave({ danmaku: { ...settings.danmaku, outline: Number(d.value) } })}
             />
           </Field>
           <Field className={styles.field} label="滚动弹幕时长 (秒)">
             <Input
               type="number"
-              value={String(settings.danmaku?.scrollDuration || 8)}
+              defaultValue={String(settings.danmaku?.scrollDuration || 8)}
               onChange={(_, d) => handleSave({ danmaku: { ...settings.danmaku, scrollDuration: Number(d.value) } })}
             />
           </Field>
           <Field className={styles.field} label="顶部/底部弹幕时长 (秒)">
             <Input
               type="number"
-              value={String(settings.danmaku?.staticDuration || 5)}
+              defaultValue={String(settings.danmaku?.staticDuration || 5)}
               onChange={(_, d) => handleSave({ danmaku: { ...settings.danmaku, staticDuration: Number(d.value) } })}
             />
           </Field>
-          <Field className={styles.field} label={`弹幕不透明度: ${Math.round((settings.danmaku?.opacity ?? 1) * 100)}%`}>
+          <Field className={styles.field} label={`弹幕不透明度: ${Math.round((settings.danmaku?.opacity ?? 0.8) * 100)}%`}>
             <Slider
               min={0} max={1} step={0.1}
-              value={settings.danmaku?.opacity ?? 1}
+              value={settings.danmaku?.opacity ?? 0.8}
               onChange={(_, d) => handleSave({ danmaku: { ...settings.danmaku, opacity: d.value } })}
             />
           </Field>

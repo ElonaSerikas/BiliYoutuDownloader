@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import dayjs from 'dayjs';
@@ -14,10 +13,6 @@ export function safeJoin(dir: string, name: string) {
 
 export function tplName(tpl: string, ctx: Record<string,string|number|undefined>) {
   return sanitize(Object.keys(ctx).reduce((s,k)=> s.replaceAll(`{${k}}`, String(ctx[k] ?? '')), tpl));
-}
-
-export async function writeJSON(p: string, obj: any) {
-  await fsp.writeFile(p, JSON.stringify(obj, null, 2), 'utf-8');
 }
 
 export async function exists(p: string) {

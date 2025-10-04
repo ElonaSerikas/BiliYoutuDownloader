@@ -1,6 +1,6 @@
 // ass.ts
 type Event = { t:number; mode:number; size:number; color:number; text:string };
-type Style = {
+export type Style = {
   width:number; height:number; fps:number;
   fontName:string; fontSize:number; outline:number; shadow:number; opacity:number;
   scrollDuration:number; staticDuration:number; trackHeight:number;
@@ -25,7 +25,7 @@ export function buildASS(opts:{ title:string; style:Style; events:Event[] }){
   } = style;
 
   const scrollTracks:number[] = [], topTracks:number[] = [], bottomTracks:number[] = [];
-  const alpha = `&H${Math.round(opacity*255).toString(16).toUpperCase().padStart(2,'0')}&`;
+  const alpha = `&H${Math.round((1 - opacity)*255).toString(16).toUpperCase().padStart(2,'0')}&`;
 
   const evLines:string[] = [];
   const alloc = (pool:number[], start:number, hold:number)=> {
@@ -42,20 +42,17 @@ export function buildASS(opts:{ title:string; style:Style; events:Event[] }){
       const startX = width + 20, endX = - (wText + 40);
       const end = e.t + scrollDuration;
       const txt = e.text.replace(/[{}]/g,'');
-      evLines.push(`Dialogue: 0,${t2(e.t)},${t2(end)},Scroll,,0,0,0,,
-{\\move(${startX},${y},${endX},${y})\\bord${outline}\\shad${shadow}\\1c${col}\\alpha${alpha}}${txt}`);
+      evLines.push(`Dialogue: 0,${t2(e.t)},${t2(end)},Scroll,,0,0,0,,{\\move(${startX},${y},${endX},${y})\\bord${outline}\\shad${shadow}\\1c${col}\\alpha${alpha}}${txt}`);
     } else if (e.mode===4) {
       const trk = alloc(bottomTracks, e.t, staticDuration);
       const y = height - (trk+1)*trackHeight - 10;
       const end = e.t + staticDuration;
-      evLines.push(`Dialogue: 0,${t2(e.t)},${t2(end)},Static,,0,0,0,,
-{\\an2\\pos(${Math.floor(width/2)},${y})\\bord${outline}\\shad${shadow}\\1c${col}\\alpha${alpha}}${e.text}`);
+      evLines.push(`Dialogue: 0,${t2(e.t)},${t2(end)},Static,,0,0,0,,{\\an2\\pos(${Math.floor(width/2)},${y})\\bord${outline}\\shad${shadow}\\1c${col}\\alpha${alpha}}${e.text}`);
     } else if (e.mode===5) {
       const trk = alloc(topTracks, e.t, staticDuration);
       const y = (trk)*trackHeight + 10;
       const end = e.t + staticDuration;
-      evLines.push(`Dialogue: 0,${t2(e.t)},${t2(end)},Static,,0,0,0,,
-{\\an8\\pos(${Math.floor(width/2)},${y})\\bord${outline}\\shad${shadow}\\1c${col}\\alpha${alpha}}${e.text}`);
+      evLines.push(`Dialogue: 0,${t2(e.t)},${t2(end)},Static,,0,0,0,,{\\an8\\pos(${Math.floor(width/2)},${y})\\bord${outline}\\shad${shadow}\\1c${col}\\alpha${alpha}}${e.text}`);
     }
   }
 
@@ -65,12 +62,11 @@ export function buildASS(opts:{ title:string; style:Style; events:Event[] }){
     'ScriptType: v4.00+',
     `PlayResX: ${width}`,
     `PlayResY: ${height}`,
-    `Timer: ${fps}`, // 高刷新
+    `Timer: ${fps}`,
     'ScaledBorderAndShadow: yes',
     '',
     '[V4+ Styles]',
-    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, '
-      + 'ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
     `Style: Scroll,${fontName},${fontSize},&H00FFFFFF,&H00FFFFFF,&H00202020,&H64000000,0,0,0,0,100,100,0,0,1,${outline},${shadow},7,10,10,10,1`,
     `Style: Static,${fontName},${fontSize},&H00FFFFFF,&H00FFFFFF,&H00202020,&H64000000,0,0,0,0,100,100,0,0,1,${outline},${shadow},2,10,10,10,1`,
     '',

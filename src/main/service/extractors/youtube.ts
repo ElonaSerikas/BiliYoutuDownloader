@@ -1,15 +1,23 @@
 import ytdl from 'ytdl-core';
 import type { ParseResult, StreamInfo } from './types';
+import type Store from 'electron-store';
 
 export const youtubeExtractor = {
-  async parse(url: string): Promise<ParseResult> {
+  async parse(url: string, store: Store): Promise<ParseResult> {
     const id = ytdl.getURLVideoID(url);
-    const info = await ytdl.getInfo(id);
+    const cookie = store.get('yt.cookie', '') as string;
+    
+    const info = await ytdl.getInfo(id, {
+        requestOptions: {
+            headers: {
+                cookie: cookie,
+            }
+        }
+    });
     const v = info.videoDetails;
 
     const streams: StreamInfo[] = [];
-    const fmts = info.formats || [];
-    for (const f of fmts) {
+    for (const f of info.formats) {
       streams.push({
         id: f.itag?.toString() ?? Math.random().toString(36).slice(2),
         type: f.hasVideo && f.hasAudio ? 'video' : (f.hasVideo ? 'video' : 'audio'),

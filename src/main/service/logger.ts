@@ -1,4 +1,3 @@
-// src/main/services/logger.ts
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -10,7 +9,7 @@ type LogItem = { ts: string; level: LogLevel; tag?: string; msg: string; data?: 
 
 const LOG_DIR = path.join(app.getPath('userData'), 'logs');
 const FILE_BASE = 'app.log';
-const MAX_SIZE = 2 * 1024 * 1024; // 2MB/卷
+const MAX_SIZE = 2 * 1024 * 1024; // 2MB
 const KEEP = 5;
 
 function stamp() {
@@ -24,7 +23,7 @@ async function rotateIfNeeded(filePath: string) {
     const st = await fsp.stat(filePath);
     if (st.size < MAX_SIZE) return;
   } catch { return; }
-  // 轮转
+
   for (let i = KEEP - 1; i >= 0; i--) {
     const src = i === 0 ? filePath : `${filePath}.${i}`;
     const dst = `${filePath}.${i + 1}`;
@@ -43,35 +42,29 @@ export class AppLogger {
   }
 
   get dir() { return LOG_DIR; }
-  get currentFile() { return this.file; }
 
   async write(level: LogLevel, msg: string, tag?: string, data?: any) {
     const rec: LogItem = { ts: stamp(), level, tag, msg, data };
     const line = JSON.stringify(rec) + '\n';
-    this.stream.write(line);
+    if(this.stream.writable) {
+        this.stream.write(line);
+    }
     await rotateIfNeeded(this.file);
   }
 
-  async flush() {
-    await new Promise<void>((r) => this.stream.write('', () => r()));
-  }
-
-  async listFiles() {
-    const files = await fsp.readdir(LOG_DIR);
-    return files.filter(f => f.startsWith(FILE_BASE)).sort().map(f => path.join(LOG_DIR, f));
-  }
-
-  async readRecent(lines = 5000) {
-    // 简易 tail：读取当前文件
-    const buf = await fsp.readFile(this.file, 'utf-8').catch(() => '');
-    const arr = buf.trim().split('\n');
-    return arr.slice(-lines).map(l => { try { return JSON.parse(l); } catch { return l; } });
+  async readRecent(lines = 2000) {
+    try {
+        const buf = await fsp.readFile(this.file, 'utf-8');
+        const arr = buf.trim().split('\n');
+        return arr.slice(-lines).map(l => { try { return JSON.parse(l); } catch { return l; } });
+    } catch {
+        return [];
+    }
   }
 }
 
 export const logger = new AppLogger();
 
-// 便捷函数
 export const log = {
   debug: (m: string, t?: string, d?: any) => logger.write('debug', m, t, d),
   info:  (m: string, t?: string, d?: any) => logger.write('info',  m, t, d),
